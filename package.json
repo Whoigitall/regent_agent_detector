@@ -1,5 +1,5 @@
 {
-  "name": "regent-agent-detector",
+  "name": "regent_agent_detector",
   "version": "1.0.0",
   "description": "Backend engine for AI agent detection and classification",
   "main": "server/index.js",
