@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/detect", "destination": "/api/detect.js" }
+  ]
+}
