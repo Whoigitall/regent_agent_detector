@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Regent Detector Test</title>
+    <style>
+        body { background: #0b0e14; color: #00C9B7; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        .status { padding: 20px; border: 1px solid #00C9B7; border-radius: 10px; box-shadow: 0 0 20px rgba(0, 201, 183, 0.2); }
+    </style>
+</head>
+<body>
+    <div class="status">
+        <h1>Regent Detector Status: <span id="res">Checking...</span></h1>
+        <p>Open Console (F12) to see the full analysis.</p>
+    </div>
+
+    <script src="https://regent-agent-detector.vercel.app/sdk/detector.js"></script>
+    
+    <script>
+        // Небольшой хак, чтобы вывести результат на экран
+        const originalLog = console.log;
+        console.log = function(msg, data) {
+            if (msg === "Regent Analysis:") {
+                document.getElementById('res').innerText = data.type.toUpperCase();
+            }
+            originalLog.apply(console, arguments);
+        };
+    </script>
+</body>
+</html>
