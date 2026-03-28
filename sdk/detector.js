@@ -19,7 +19,7 @@
   async function sendToRegent(data) {
     try {
       // Пока стучимся в localhost, на этапе деплоя заменим на реальный URL
-      const response = await fetch("http://localhost:3000/detect", {
+      const response = await fetch("https://regent-agent-detector.vercel.app/api/detect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data)
