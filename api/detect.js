@@ -5,7 +5,7 @@ const app = express();
 app.use(cors()); // Позволяет принимать данные с любых доменов
 app.use(express.json());
 
-app.post('/detect', (req, res) => {
+app.post('api/detect', (req, res) => {
   const data = req.body;
   const analysis = analyzeTraffic(data);
   
