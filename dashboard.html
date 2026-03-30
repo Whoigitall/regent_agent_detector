@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Regent | Agent Awareness Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { background: #0b0e14; color: #fff; font-family: 'Inter', sans-serif; margin: 0; padding: 40px; }
+        h1 { font-family: 'Rajdhani', sans-serif; color: #00C9B7; text-transform: uppercase; letter-spacing: 2px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 40px; }
+        .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(0,201,183,0.2); padding: 25px; border-radius: 12px; }
+        .big-num { font-size: 48px; font-weight: bold; color: #00C9B7; }
+        .label { color: rgba(255,255,255,0.5); text-transform: uppercase; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { text-align: left; color: rgba(255,255,255,0.5); font-size: 12px; padding-bottom: 10px; }
+        td { padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.1); font-size: 14px; }
+        .tag { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+        .tag-human { background: rgba(0, 201, 183, 0.2); color: #00C9B7; }
+        .tag-agent { background: rgba(255, 71, 87, 0.2); color: #ff4757; }
+    </style>
+</head>
+<body>
+    <h1>Regent Agent Awareness</h1>
+    <div class="grid">
+        <div class="card">
+            <div class="label">Total Humans Identified</div>
+            <div id="count-human" class="big-num">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Autonomous Agents Detected</div>
+            <div id="count-agent" class="big-num" style="color: #ff4757;">0</div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 20px;">
+        <div class="label">Recent Activity Log</div>
+        <table id="log-table">
+            <thead>
+                <tr>
+                    <th>TIMESTAMP</th>
+                    <th>ENTITY TYPE</th>
+                    <th>RISK SCORE</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        async function updateStats() {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+            
+            document.getElementById('count-human').innerText = data.human;
+            document.getElementById('count-agent').innerText = data.agent;
+            
+            const tbody = document.querySelector('#log-table tbody');
+            tbody.innerHTML = data.recent.map(r => `
+                <tr>
+                    <td>${new Date(r.time).toLocaleTimeString()}</td>
+                    <td><span class="tag ${r.type === 'human' ? 'tag-human' : 'tag-agent'}">${r.type.toUpperCase()}</span></td>
+                    <td>${r.score}%</td>
+                </tr>
+            `).join('');
+        }
+        setInterval(updateStats, 3000);
+        updateStats();
+    </script>
+</body>
+</html>
