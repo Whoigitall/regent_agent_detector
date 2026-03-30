@@ -7,40 +7,35 @@ app.use(cors());
 app.use(express.json());
 
 app.post('*', async (req, res) => {
-  const data = req.body;
-  const analysis = analyzeTraffic(data);
-
   try {
-    // 1. Увеличиваем счетчик
+    const analysis = analyzeTraffic(req.body || {});
     const key = analysis.type === 'human' ? 'stats:human' : 'stats:agent';
+    
     await kv.incr(key);
-
-    // 2. Формируем строку для лога (ВАЖНО: JSON.stringify)
-    const logEntry = JSON.stringify({
+    await kv.lpush('stats:recent', JSON.stringify({
       type: analysis.type,
       score: analysis.risk_score,
       time: new Date().toISOString()
-    });
-
-    // 3. Сохраняем в список
-    await kv.lpush('stats:recent', logEntry);
+    }));
     await kv.ltrim('stats:recent', 0, 9);
-  } catch (error) {
-    console.error("KV Error during write:", error);
-    // Не даем серверу упасть, если база занята
-  }
 
-  res.json(analysis);
+    res.json(analysis);
+  } catch (e) {
+    console.error(e);
+    res.json({ type: "human", risk_score: 0 }); // Возвращаем дефолт, чтобы не вешать фронтенд
+  }
 });
 
 app.get('/api/stats', async (req, res) => {
   try {
-    const human = await kv.get('stats:human') || 0;
-    const agent = await kv.get('stats:agent') || 0;
-    const recent = await kv.lrange('stats:recent', 0, 9);
-    res.json({ human, agent, recent });
-  } catch (error) {
-    res.status(500).json({ error: "Read error" });
+    const [human, agent, recent] = await Promise.all([
+      kv.get('stats:human'),
+      kv.get('stats:agent'),
+      kv.lrange('stats:recent', 0, 9)
+    ]);
+    res.json({ human: human || 0, agent: agent || 0, recent: recent || [] });
+  } catch (e) {
+    res.json({ human: 0, agent: 0, recent: [] });
   }
 });
 
@@ -48,12 +43,7 @@ function analyzeTraffic(d) {
   let score = 0;
   if (d.webdriver) score += 50;
   if (d.plugins === 0) score += 20;
-  if (!d.languages || d.languages.length === 0) score += 15;
-  
-  let type = "human";
-  if (score >= 60) type = "agent";
-  else if (score >= 30) type = "bot";
-  
+  let type = score >= 60 ? "agent" : (score >= 30 ? "bot" : "human");
   return { type, risk_score: score };
 }
 
