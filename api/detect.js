@@ -12,16 +12,22 @@ app.post('*', async (req, res) => {
 
   // Сохраняем статистику в базу данных
   try {
+    // 1. Увеличиваем общий счетчик
     const key = analysis.type === 'human' ? 'stats:human' : 'stats:agent';
-    await kv.incr(key); // Увеличиваем счетчик на +1
-    await kv.lpush('stats:recent', { // Записываем последние 10 визитов
+    await kv.incr(key);
+
+    // 2. ЗАПИСЫВАЕМ КАК СТРОКУ (JSON.stringify) — это исправит ошибку 500
+    const logEntry = JSON.stringify({
       type: analysis.type,
       score: analysis.risk_score,
       time: new Date().toISOString()
     });
-    await kv.ltrim('stats:recent', 0, 9); 
-  } catch (e) {
-    console.error("KV Error:", e);
+
+    await kv.lpush('stats:recent', logEntry);
+    await kv.ltrim('stats:recent', 0, 9);
+    
+  } catch (error) {
+    console.error("KV Storage Error:", error);
   }
 
   res.json(analysis);
