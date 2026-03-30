@@ -58,7 +58,6 @@
                 const tbody = document.querySelector('#log-table tbody');
                 if (data.recent && data.recent.length > 0) {
                     tbody.innerHTML = data.recent.map(item => {
-                        // Превращаем строку из базы обратно в объект
                         const r = typeof item === 'string' ? JSON.parse(item) : item;
                         return `
                             <tr>
@@ -72,11 +71,9 @@
             } catch (e) {
                 console.error("Dashboard update failed:", e);
             }
-        } // <-- Вот эта скобка закрывает функцию
+        } // <--- ВОТ ЭТА СКОБКА БЫЛА ПРОПУЩЕНА
 
-        // Запускаем обновление каждые 3 секунды
         setInterval(updateStats, 3000);
-        // И один раз запускаем сразу при загрузке
         updateStats();
     </script>
 </body>
