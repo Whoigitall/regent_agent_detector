@@ -55,14 +55,19 @@
             document.getElementById('count-agent').innerText = data.agent;
             
             const tbody = document.querySelector('#log-table tbody');
-            tbody.innerHTML = data.recent.map(r => `
+    if (data.recent && data.recent.length > 0) {
+        tbody.innerHTML = data.recent.map(item => {
+            // Превращаем строку из базы обратно в объект
+            const r = typeof item === 'string' ? JSON.parse(item) : item;
+            return `
                 <tr>
-                    <td>${new Date(r.time).toLocaleTimeString()}</td>
-                    <td><span class="tag ${r.type === 'human' ? 'tag-human' : 'tag-agent'}">${r.type.toUpperCase()}</span></td>
-                    <td>${r.score}%</td>
+                    <td style="color: rgba(255,255,255,0.6)">${new Date(r.time).toLocaleTimeString()}</td>
+                    <td><span class="tag ${r.type === 'human' ? 'tag-human' : 'tag-agent'}">${r.type}</span></td>
+                    <td style="color: ${r.score > 50 ? '#ff4757' : '#00C9B7'}">${r.score}%</td>
                 </tr>
-            `).join('');
-        }
+            `;
+        }).join('');
+    }
         setInterval(updateStats, 3000);
         updateStats();
     </script>
