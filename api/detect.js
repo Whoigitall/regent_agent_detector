@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { kv } = require('@vercel/kv'); // Подключаем базу
+const { kv } = require('@vercel/kv');
 const app = express();
 
 app.use(cors());
@@ -10,39 +10,38 @@ app.post('*', async (req, res) => {
   const data = req.body;
   const analysis = analyzeTraffic(data);
 
-  // Сохраняем статистику в базу данных
   try {
-    // Увеличиваем счетчик
+    // 1. Увеличиваем счетчик
     const key = analysis.type === 'human' ? 'stats:human' : 'stats:agent';
     await kv.incr(key);
 
-    // Упаковываем данные в строку ПЕРЕД отправкой
+    // 2. Формируем строку для лога (ВАЖНО: JSON.stringify)
     const logEntry = JSON.stringify({
       type: analysis.type,
       score: analysis.risk_score,
       time: new Date().toISOString()
     });
 
-    // Сохраняем в список
+    // 3. Сохраняем в список
     await kv.lpush('stats:recent', logEntry);
-    // Оставляем только последние 10 записей
     await kv.ltrim('stats:recent', 0, 9);
-    
-    console.log("Stats updated successfully");
   } catch (error) {
-    // Если база недоступна, сервер не должен падать с ошибкой 500
-    console.error("KV Storage Error:", error);
+    console.error("KV Error during write:", error);
+    // Не даем серверу упасть, если база занята
   }
 
   res.json(analysis);
 });
 
-// Добавим новый эндпоинт для получения статистики для Дашборда
 app.get('/api/stats', async (req, res) => {
-  const human = await kv.get('stats:human') || 0;
-  const agent = await kv.get('stats:agent') || 0;
-  const recent = await kv.lrange('stats:recent', 0, 9);
-  res.json({ human, agent, recent });
+  try {
+    const human = await kv.get('stats:human') || 0;
+    const agent = await kv.get('stats:agent') || 0;
+    const recent = await kv.lrange('stats:recent', 0, 9);
+    res.json({ human, agent, recent });
+  } catch (error) {
+    res.status(500).json({ error: "Read error" });
+  }
 });
 
 function analyzeTraffic(d) {
@@ -50,9 +49,12 @@ function analyzeTraffic(d) {
   if (d.webdriver) score += 50;
   if (d.plugins === 0) score += 20;
   if (!d.languages || d.languages.length === 0) score += 15;
-
-  let type = score >= 60 ? "probable_agent" : (score >= 30 ? "bot" : "human");
-  return { type, risk_score: score, timestamp: new Date() };
+  
+  let type = "human";
+  if (score >= 60) type = "agent";
+  else if (score >= 30) type = "bot";
+  
+  return { type, risk_score: score };
 }
 
 module.exports = app;
