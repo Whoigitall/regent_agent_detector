@@ -1,48 +1,48 @@
 const express = require('express');
 const cors = require('cors');
+const { kv } = require('@vercel/kv'); // Подключаем базу
 const app = express();
 
-app.use(cors()); // Позволяет принимать данные с любых доменов
+app.use(cors());
 app.use(express.json());
 
-app.post('*', (req, res) => {
+app.post('*', async (req, res) => {
   const data = req.body;
   const analysis = analyzeTraffic(data);
-  
-  // Вывод в лог сервера для мониторинга
-  console.log(`[${new Date().toLocaleTimeString()}] Analysis: ${analysis.type} | Score: ${analysis.risk_score}`);
-  
+
+  // Сохраняем статистику в базу данных
+  try {
+    const key = analysis.type === 'human' ? 'stats:human' : 'stats:agent';
+    await kv.incr(key); // Увеличиваем счетчик на +1
+    await kv.lpush('stats:recent', { // Записываем последние 10 визитов
+      type: analysis.type,
+      score: analysis.risk_score,
+      time: new Date().toISOString()
+    });
+    await kv.ltrim('stats:recent', 0, 9); 
+  } catch (e) {
+    console.error("KV Error:", e);
+  }
+
   res.json(analysis);
+});
+
+// Добавим новый эндпоинт для получения статистики для Дашборда
+app.get('/api/stats', async (req, res) => {
+  const human = await kv.get('stats:human') || 0;
+  const agent = await kv.get('stats:agent') || 0;
+  const recent = await kv.lrange('stats:recent', 0, 9);
+  res.json({ human, agent, recent });
 });
 
 function analyzeTraffic(d) {
   let score = 0;
-  let signals = [];
+  if (d.webdriver) score += 50;
+  if (d.plugins === 0) score += 20;
+  if (!d.languages || d.languages.length === 0) score += 15;
 
-  // Базовые правила детекции
-  if (d.webdriver) {
-    score += 50;
-    signals.push("webdriver detected (automation tool)");
-  }
-  if (d.plugins === 0) {
-    score += 20;
-    signals.push("zero plugins (typical for headless bots)");
-  }
-  if (!d.languages || d.languages.length === 0) {
-    score += 15;
-    signals.push("missing language headers");
-  }
-
-  let type = "human";
-  if (score >= 60) type = "probable_agent";
-  else if (score >= 30) type = "bot";
-
-  return {
-    type,
-    risk_score: score,
-    signals,
-    timestamp: new Date()
-  };
+  let type = score >= 60 ? "probable_agent" : (score >= 30 ? "bot" : "human");
+  return { type, risk_score: score, timestamp: new Date() };
 }
 
 module.exports = app;
