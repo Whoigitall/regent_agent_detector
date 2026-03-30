@@ -1,8 +1,6 @@
 {
   "name": "regent-agent-detector",
   "version": "1.0.0",
-  "description": "Backend engine for AI agent detection",
-  "main": "api/detect.js",
   "dependencies": {
     "@vercel/kv": "^1.0.1",
     "cors": "^2.8.5",
