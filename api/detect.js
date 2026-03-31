@@ -1,6 +1,4 @@
 const Redis = require('ioredis');
-
-// Подключаемся к твоему Redis Labs
 const redis = new Redis(process.env.REDIS_URL);
 
 module.exports = async (req, res) => {
@@ -10,16 +8,21 @@ module.exports = async (req, res) => {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Геттер статистики (GET)
+  // Геттер статистики (GET) — теперь возвращает и список последних событий
   if (req.method === 'GET') {
     try {
-      const [h, a] = await Promise.all([
+      const [h, a, recentRaw] = await Promise.all([
         redis.get('stats:human'),
-        redis.get('stats:agent')
+        redis.get('stats:agent'),
+        redis.lrange('stats:recent', 0, 9) // Берем последние 10 записей
       ]);
+      
+      const recent = recentRaw.map(item => JSON.parse(item));
+
       return res.status(200).json({ 
         human: parseInt(h) || 0, 
-        agent: parseInt(a) || 0 
+        agent: parseInt(a) || 0,
+        recent: recent
       });
     } catch (e) {
       return res.status(500).json({ error: "Redis Error", details: e.message });
@@ -32,22 +35,30 @@ module.exports = async (req, res) => {
     const hasSecCh = req.headers['sec-ch-ua'];
     
     let riskScore = 0;
-    
-    // Детекция агента
-    if (ua.includes('curl') || ua.includes('Postman')) riskScore += 100;
-    if (!hasSecCh && !ua.includes('Mozilla')) riskScore += 80;
-    if (req.body?.webdriver) riskScore += 90;
+    let reasons = [];
+
+    if (ua.includes('curl')) { riskScore += 100; reasons.push('CLI Tool'); }
+    if (!hasSecCh && !ua.includes('Mozilla')) { riskScore += 80; reasons.push('No Browser Headers'); }
+    if (req.body?.webdriver) { riskScore += 90; reasons.push('Webdriver detected'); }
 
     const type = riskScore >= 50 ? 'agent' : 'human';
 
-    // Запись в Redis Labs
+    // 1. Инкремент счетчиков
     await redis.incr(`stats:${type}`);
-    
-    return res.status(200).json({ 
-      type, 
-      risk_score: riskScore,
-      provider: "Redis Labs External"
+
+    // 2. Запись детального события в список
+    const eventData = JSON.stringify({
+      id: Math.random().toString(36).substr(2, 9),
+      type: type,
+      score: riskScore,
+      reason: reasons.length > 0 ? reasons[0] : 'Normal behavior',
+      time: new Date().toLocaleTimeString('ru-RU')
     });
+
+    await redis.lpush('stats:recent', eventData);
+    await redis.ltrim('stats:recent', 0, 19); // Храним только последние 20 событий
+
+    return res.status(200).json({ type, risk_score: riskScore });
   } catch (e) {
     return res.status(500).json({ error: "Runtime Error", msg: e.message });
   }
