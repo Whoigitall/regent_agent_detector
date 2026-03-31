@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Regent | Agent Awareness Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -12,7 +13,7 @@
         .big-num { font-size: 56px; font-weight: bold; color: #00C9B7; margin: 10px 0; }
         .label { color: rgba(255,255,255,0.5); text-transform: uppercase; font-size: 12px; letter-spacing: 1px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { text-align: left; color: rgba(255,255,255,0.4); font-size: 11px; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        th { text-align: left; color: rgba(255,255,255,0.4); font-size: 11px; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); text-transform: uppercase; }
         td { padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; font-family: monospace; }
         .tag { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
         .tag-human { background: rgba(0, 201, 183, 0.1); color: #00C9B7; border: 1px solid #00C9B7; }
@@ -39,12 +40,17 @@
             <table id="log-table">
                 <thead>
                     <tr>
-                        <th>TIMESTAMP</th>
-                        <th>ENTITY TYPE</th>
-                        <th>RISK SCORE</th>
+                        <th>Timestamp</th>
+                        <th>Entity Type</th>
+                        <th>Risk Score</th>
+                        <th>Detection Reason</th>
                     </tr>
                 </thead>
-                <tbody></tbody>
+                <tbody>
+                    <tr>
+                        <td colspan="4" style="text-align:center; opacity: 0.3; padding: 40px;">Initializing stream...</td>
+                    </tr>
+                </tbody>
             </table>
         </div>
     </div>
@@ -52,36 +58,57 @@
     <script>
         async function updateStats() {
             try {
+                // Запрашиваем данные у нашего API
                 const res = await fetch('/api/stats');
+                if (!res.ok) throw new Error('API connection failed');
+                
                 const data = await res.json();
                 
-                // Используем "|| 0", чтобы не было undefined
+                // Обновляем счетчики в карточках
                 document.getElementById('count-human').innerText = data.human || 0;
                 document.getElementById('count-agent').innerText = data.agent || 0;
                 
                 const tbody = document.querySelector('#log-table tbody');
+                
+                // Если есть свежие записи в массиве recent
                 if (data.recent && data.recent.length > 0) {
                     tbody.innerHTML = data.recent.map(item => {
-                        // Распаковываем строку JSON из базы обратно в объект
+                        // Парсим JSON строку из Redis обратно в объект, если это строка
                         const r = typeof item === 'string' ? JSON.parse(item) : item;
+                        
+                        // Используем время напрямую (оно уже отформатировано на сервере)
+                        const timeStr = r.time || '--:--:--';
+                        
                         return `
                             <tr>
-                                <td style="color: rgba(255,255,255,0.6)">${new Date(r.time).toLocaleTimeString()}</td>
-                                <td><span class="tag ${r.type === 'human' ? 'tag-human' : 'tag-agent'}">${r.type}</span></td>
-                                <td style="color: ${r.score > 50 ? '#ff4757' : '#00C9B7'}">${r.score}%</td>
+                                <td style="color: rgba(255,255,255,0.6)">${timeStr}</td>
+                                <td>
+                                    <span class="tag ${r.type === 'human' ? 'tag-human' : 'tag-agent'}">
+                                        ${r.type === 'human' ? '👤 ' + r.type : '🤖 ' + r.type}
+                                    </span>
+                                </td>
+                                <td style="color: ${r.score > 50 ? '#ff4757' : '#00C9B7'}; font-weight: bold;">
+                                    ${r.score}%
+                                </td>
+                                <td style="color: rgba(255,255,255,0.4); font-size: 12px;">
+                                    ${r.reason || 'Standard Verification'}
+                                </td>
                             </tr>
                         `;
                     }).join('');
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; opacity: 0.3; padding: 40px;">No entities detected yet...</td></tr>';
+                    // Если данных пока нет
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; opacity: 0.3; padding: 40px;">No entities detected in this session...</td></tr>';
                 }
             } catch (e) {
-                console.error("Dashboard error:", e);
+                console.error("Dashboard Sync Error:", e);
             }
         }
 
-        // Обновляем каждые 3 секунды
+        // Авто-обновление каждые 3 секунды для эффекта Live-стрима
         setInterval(updateStats, 3000);
+        
+        // Первый запуск при загрузке страницы
         updateStats();
     </script>
 </body>
