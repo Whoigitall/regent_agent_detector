@@ -1,40 +1,74 @@
-const express = require('express');
-const cors = require('cors');
-const { createClient } = require('@vercel/kv'); // Используем прямой конструктор
+const { kv } = require('@vercel/kv');
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+module.exports = async (req, res) => {
+  // CORS настройки
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-// Инициализируем KV только если есть переменные
-const kv = (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) 
-  ? createClient({
-      url: process.env.KV_REST_API_URL,
-      token: process.env.KV_REST_API_TOKEN,
-    })
-  : null;
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
-app.post('*', async (req, res) => {
-  const analysis = { type: 'human', risk_score: 0 }; // Дефолт
-  
-  if (kv) {
+  // 1. ПРОВЕРКА СТАТИСТИКИ (GET)
+  if (req.method === 'GET') {
     try {
-      // Твоя логика записи в KV
-      await kv.incr('stats:human'); 
+      const [human, agent, recent] = await Promise.all([
+        kv.get('stats:human'),
+        kv.get('stats:agent'),
+        kv.lrange('stats:recent', 0, 9)
+      ]);
+      return res.status(200).json({ 
+        human: parseInt(human) || 0, 
+        agent: parseInt(agent) || 0, 
+        recent: recent || [] 
+      });
     } catch (e) {
-      console.error("Database Write Error:", e.message);
+      return res.status(200).json({ human: 0, agent: 0, recent: [] });
     }
-  } else {
-    console.warn("KV Client not initialized - missing env vars");
   }
 
-  res.json(analysis);
-});
+  // 2. ДЕТЕКЦИЯ (POST)
+  try {
+    const body = req.body || {};
+    const headers = req.headers || {};
+    const ua = headers['user-agent'] || '';
 
-// Аналогично в GET /api/stats
-app.get('/api/stats', async (req, res) => {
-  if (!kv) return res.json({ human: 0, agent: 0, recent: [] });
-  // ... логика получения данных
-});
+    let score = 0;
+    let reasons = [];
 
-module.exports = app;
+    // --- ПРОВЕРКА 1: Браузерные признаки (от фронтенда) ---
+    if (body.webdriver === true) { score += 50; reasons.push('Webdriver detected'); }
+    if (body.plugins === 0) { score += 20; reasons.push('No plugins'); }
+
+    // --- ПРОВЕРКА 2: Серверные признаки (Headers) ---
+    const botLibraries = /python-requests|node-fetch|axios|go-http-client|aiohttp|urllib/i;
+    if (botLibraries.test(ua)) {
+      score += 100;
+      reasons.push('Automated library UA');
+    }
+    
+    // Если заголовков слишком мало (типично для простых ботов)
+    if (Object.keys(headers).length < 5) {
+      score += 30;
+      reasons.push('Suspiciously low header count');
+    }
+
+    const isAgent = score >= 50;
+    const type = isAgent ? 'agent' : 'human';
+
+    // Запись в базу
+    await kv.incr(`stats:${type}`);
+    await kv.lpush('stats:recent', JSON.stringify({
+      type,
+      score,
+      time: new Date().toISOString(),
+      reasons: reasons.slice(0, 2) // берем пару причин для лога
+    }));
+    await kv.ltrim('stats:recent', 0, 9);
+
+    return res.status(200).json({ type, risk_score: score });
+
+  } catch (e) {
+    console.error('API Error:', e);
+    return res.status(200).json({ type: 'human', risk_score: 0 });
+  }
+};
