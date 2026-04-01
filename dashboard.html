@@ -51,49 +51,53 @@
     <script>
         async function updateStats() {
             try {
-                const res = await fetch('/api/stats?t=' + Date.now()); // Добавили t= для сброса кэша
+                // Сброс кэша через временную метку
+                const res = await fetch('/api/stats?nocache=' + Date.now());
                 const data = await res.json();
-                console.log("Regent Data Received:", data); // ЭТО ДЛЯ ПРОВЕРКИ В КОНСОЛИ
-
-                let hCount = 0;
-                let aCount = 0;
+                
+                // 1. Обновляем счетчики напрямую из базы
+                document.getElementById('count-human').innerText = data.human || 0;
+                document.getElementById('count-agent').innerText = data.agent || 0;
+                
                 const tbody = document.querySelector('#log-table tbody');
                 
                 if (data.recent && data.recent.length > 0) {
                     tbody.innerHTML = data.recent.map(item => {
+                        // Парсим данные, если они пришли в виде строки JSON
                         const r = typeof item === 'string' ? JSON.parse(item) : item;
                         
-                        // Супер-гибкая проверка типа
-                        const reason = (r.reason || '').toLowerCase();
+                        // Определяем, человек это или бот
                         const type = (r.entity_type || r.type || '').toLowerCase();
                         const risk = r.risk !== undefined ? r.risk : (r.score || 0);
+                        const reason = (r.reason || '').toLowerCase();
                         
-                        // Если риск маленький ИЛИ причина содержит "human" - это человек
-                        const isHuman = (risk < 10 || reason.includes('human') || type === 'human');
-                        
-                        if (isHuman) hCount++; else aCount++;
+                        // Критерии человечности
+                        const isHuman = (type === 'human' || risk === 0 || reason.includes('human'));
 
                         return `
                             <tr>
-                                <td style="color: rgba(255,255,255,0.6)">${r.time || 'LIVE'}</td>
+                                <td style="color: rgba(255,255,255,0.6)">${r.time || 'JUST NOW'}</td>
                                 <td>
                                     <span class="tag ${isHuman ? 'tag-human' : 'tag-agent'}">
                                         ${isHuman ? '👤 HUMAN' : '🤖 AGENT'}
                                     </span>
                                 </td>
-                                <td style="color: ${isHuman ? '#00C9B7' : '#ff4757'}; font-weight: bold;">${risk}%</td>
-                                <td style="color: rgba(255,255,255,0.4); font-size: 12px;">${r.reason || 'Verified'}</td>
+                                <td style="color: ${isHuman ? '#00C9B7' : '#ff4757'}; font-weight: bold;">
+                                    ${risk}%
+                                </td>
+                                <td style="color: rgba(255,255,255,0.4); font-size: 12px;">
+                                    ${r.reason || 'Verified'}
+                                </td>
                             </tr>
                         `;
                     }).join('');
-                    
-                    document.getElementById('count-human').innerText = hCount;
-                    document.getElementById('count-agent').innerText = aCount;
-                } else {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; opacity: 0.3; padding: 40px;">Waiting for new entities...</td></tr>';
                 }
-            } catch (e) { console.error("Sync Error:", e); }
+            } catch (e) {
+                console.error("Regent Sync Error:", e);
+            }
         }
+
+        // Обновляем раз в 2 секунды для динамики
         setInterval(updateStats, 2000);
         updateStats();
     </script>
