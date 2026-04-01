@@ -14,7 +14,7 @@
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { text-align: left; color: rgba(255,255,255,0.4); font-size: 11px; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); text-transform: uppercase; }
         td { padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; font-family: monospace; }
-        .tag { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; display: inline-block; min-width: 80px; text-align: center; }
+        .tag { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; display: inline-block; min-width: 85px; text-align: center; }
         .tag-human { background: rgba(0, 201, 183, 0.1); color: #00C9B7; border: 1px solid #00C9B7; }
         .tag-agent { background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid #ff4757; }
     </style>
@@ -51,53 +51,47 @@
     <script>
         async function updateStats() {
             try {
-                // Сброс кэша через временную метку
-                const res = await fetch('/api/stats?nocache=' + Date.now());
+                const res = await fetch('/api/stats?t=' + Date.now());
                 const data = await res.json();
                 
-                // 1. Обновляем счетчики напрямую из базы
+                // Обновляем главные счетчики напрямую
                 document.getElementById('count-human').innerText = data.human || 0;
                 document.getElementById('count-agent').innerText = data.agent || 0;
                 
                 const tbody = document.querySelector('#log-table tbody');
                 
                 if (data.recent && data.recent.length > 0) {
-                    tbody.innerHTML = data.recent.map(item => {
-                        // Парсим данные, если они пришли в виде строки JSON
-                        const r = typeof item === 'string' ? JSON.parse(item) : item;
-                        
-                        // Определяем, человек это или бот
+                    // Парсим и фильтруем данные
+                    const items = data.recent.map(item => typeof item === 'string' ? JSON.parse(item) : item);
+                    
+                    // Сортируем: самые новые (по времени или просто по порядку в массиве) — наверх
+                    // Если в данных нет timestamp, используем порядок из Redis (обычно новые в конце, так что делаем reverse)
+                    const sortedItems = items.reverse();
+
+                    tbody.innerHTML = sortedItems.map(r => {
                         const type = (r.entity_type || r.type || '').toLowerCase();
                         const risk = r.risk !== undefined ? r.risk : (r.score || 0);
                         const reason = (r.reason || '').toLowerCase();
                         
-                        // Критерии человечности
-                        const isHuman = (type === 'human' || risk === 0 || reason.includes('human'));
+                        // ЛОГИКА ОПРЕДЕЛЕНИЯ: Человек, если риск < 20 ИЛИ в причине есть слово 'human'
+                        const isHuman = (risk < 20 || reason.includes('human') || type === 'human');
 
                         return `
                             <tr>
-                                <td style="color: rgba(255,255,255,0.6)">${r.time || 'JUST NOW'}</td>
+                                <td style="color: rgba(255,255,255,0.6)">${r.time || 'LIVE'}</td>
                                 <td>
                                     <span class="tag ${isHuman ? 'tag-human' : 'tag-agent'}">
                                         ${isHuman ? '👤 HUMAN' : '🤖 AGENT'}
                                     </span>
                                 </td>
-                                <td style="color: ${isHuman ? '#00C9B7' : '#ff4757'}; font-weight: bold;">
-                                    ${risk}%
-                                </td>
-                                <td style="color: rgba(255,255,255,0.4); font-size: 12px;">
-                                    ${r.reason || 'Verified'}
-                                </td>
+                                <td style="color: ${isHuman ? '#00C9B7' : '#ff4757'}; font-weight: bold;">${risk}%</td>
+                                <td style="color: rgba(255,255,255,0.4); font-size: 12px;">${r.reason || 'Verified'}</td>
                             </tr>
                         `;
                     }).join('');
                 }
-            } catch (e) {
-                console.error("Regent Sync Error:", e);
-            }
+            } catch (e) { console.error("Sync Error:", e); }
         }
-
-        // Обновляем раз в 2 секунды для динамики
         setInterval(updateStats, 2000);
         updateStats();
     </script>
