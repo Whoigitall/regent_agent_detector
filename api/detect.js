@@ -2,19 +2,20 @@ const Redis = require('ioredis');
 const redis = new Redis(process.env.REDIS_URL);
 
 module.exports = async (req, res) => {
+  // Настройка CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Геттер статистики (GET) — теперь возвращает и список последних событий
+  // 1. ГЕТТЕР: Отдает данные на Дашборд
   if (req.method === 'GET') {
     try {
       const [h, a, recentRaw] = await Promise.all([
         redis.get('stats:human'),
         redis.get('stats:agent'),
-        redis.lrange('stats:recent', 0, 9) // Берем последние 10 записей
+        redis.lrange('stats:recent', 0, 14) // Берем последние 15
       ]);
       
       const recent = recentRaw.map(item => JSON.parse(item));
@@ -25,41 +26,46 @@ module.exports = async (req, res) => {
         recent: recent
       });
     } catch (e) {
-      return res.status(500).json({ error: "Redis Error", details: e.message });
+      return res.status(500).json({ error: "Redis Read Error", details: e.message });
     }
   }
 
-  // Детекция (POST)
-  try {
-    const ua = req.headers['user-agent'] || '';
-    const hasSecCh = req.headers['sec-ch-ua'];
-    
-    let riskScore = 0;
-    let reasons = [];
+  // 2. РЕПОРТЕР (POST): Принимает данные от Sandbox
+  if (req.method === 'POST') {
+    try {
+      const { risk, verdict, reason } = req.body;
 
-    if (ua.includes('curl')) { riskScore += 100; reasons.push('CLI Tool'); }
-    if (!hasSecCh && !ua.includes('Mozilla')) { riskScore += 80; reasons.push('No Browser Headers'); }
-    if (req.body?.webdriver) { riskScore += 90; reasons.push('Webdriver detected'); }
+      // Если данных нет в body, значит кто-то дернул эндпоинт впустую — игнорируем
+      if (!verdict && risk === undefined) {
+          return res.status(400).json({ error: "Empty payload" });
+      }
 
-    const type = riskScore >= 50 ? 'agent' : 'human';
+      // Определяем тип на основе вердикта из Sandbox
+      // Мы больше не проверяем заголовки здесь! Мы верим Sandbox.
+      const isHuman = (verdict === 'Verified' || risk < 20);
+      const type = isHuman ? 'human' : 'agent';
 
-    // 1. Инкремент счетчиков
-    await redis.incr(`stats:${type}`);
+      // Атомарный инкремент счетчиков
+      await redis.incr(`stats:${type}`);
 
-    // 2. Запись детального события в список
-    const eventData = JSON.stringify({
-      id: Math.random().toString(36).substr(2, 9),
-      type: type,
-      score: riskScore,
-      reason: reasons.length > 0 ? reasons[0] : 'Normal behavior',
-      time: new Date().toLocaleTimeString('ru-RU')
-    });
+      // Запись события
+      const eventData = JSON.stringify({
+        id: Math.random().toString(36).substr(2, 9),
+        type: type,
+        risk: risk || 0,
+        reason: reason || (isHuman ? 'Human behavior' : 'Automated action'),
+        time: new Date().toLocaleTimeString('ru-RU', { timeZone: 'Asia/Almaty' })
+      });
 
-    await redis.lpush('stats:recent', eventData);
-    await redis.ltrim('stats:recent', 0, 19); // Храним только последние 20 событий
+      // LPUSH — новое всегда сверху. LTRIM — не даем базе раздуваться.
+      await redis.lpush('stats:recent', eventData);
+      await redis.ltrim('stats:recent', 0, 19); 
 
-    return res.status(200).json({ type, risk_score: riskScore });
-  } catch (e) {
-    return res.status(500).json({ error: "Runtime Error", msg: e.message });
+      return res.status(200).json({ success: true, recorded_as: type });
+    } catch (e) {
+      return res.status(500).json({ error: "Runtime Error", msg: e.message });
+    }
   }
+
+  return res.status(405).json({ error: "Method not allowed" });
 };
