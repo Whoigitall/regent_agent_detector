@@ -15,7 +15,7 @@
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { text-align: left; color: rgba(255,255,255,0.4); font-size: 11px; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); text-transform: uppercase; }
         td { padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; font-family: monospace; }
-        .tag { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; display: inline-block; min-width: 70px; text-align: center; }
+        .tag { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; display: inline-block; min-width: 80px; text-align: center; }
         .tag-human { background: rgba(0, 201, 183, 0.1); color: #00C9B7; border: 1px solid #00C9B7; }
         .tag-agent { background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid #ff4757; }
     </style>
@@ -23,7 +23,6 @@
 <body>
     <div class="container" style="max-width: 1000px; margin: 0 auto;">
         <h1>Regent Protocol <span style="font-weight: 200; opacity: 0.6;">// Awareness</span></h1>
-        
         <div class="grid">
             <div class="card">
                 <div class="label">Total Humans Identified</div>
@@ -34,7 +33,6 @@
                 <div id="count-agent" class="big-num" style="color: #ff4757;">0</div>
             </div>
         </div>
-
         <div class="card" style="margin-top: 20px;">
             <div class="label">Real-time Entity Stream</div>
             <table id="log-table">
@@ -46,11 +44,7 @@
                         <th>Detection Reason</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <tr>
-                        <td colspan="4" style="text-align:center; opacity: 0.3; padding: 40px;">Initializing stream...</td>
-                    </tr>
-                </tbody>
+                <tbody></tbody>
             </table>
         </div>
     </div>
@@ -59,12 +53,10 @@
         async function updateStats() {
             try {
                 const res = await fetch('/api/stats');
-                if (!res.ok) throw new Error('API connection failed');
-                
                 const data = await res.json();
                 
-                document.getElementById('count-human').innerText = data.human || 0;
-                document.getElementById('count-agent').innerText = data.agent || 0;
+                let humanCount = 0;
+                let agentCount = 0;
                 
                 const tbody = document.querySelector('#log-table tbody');
                 
@@ -72,39 +64,36 @@
                     tbody.innerHTML = data.recent.map(item => {
                         const r = typeof item === 'string' ? JSON.parse(item) : item;
                         
-                        // Сопоставляем поля из разных версий API (type или entity_type)
-                        const rawType = (r.entity_type || r.type || 'unknown').toLowerCase();
-                        const isHuman = rawType === 'human';
+                        // ПРОВЕРКА: Если риск 0 или в причине есть слово Human - это точно человек
+                        const reason = (r.reason || '').toLowerCase();
+                        const type = (r.entity_type || r.type || '').toLowerCase();
+                        const risk = r.risk !== undefined ? r.risk : (r.score || 0);
                         
-                        const timeStr = r.time || (r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : '--:--:--');
-                        const score = r.risk !== undefined ? r.risk : (r.score || 0);
+                        const isHuman = (type === 'human' || risk === 0 || reason.includes('human'));
                         
+                        if (isHuman) humanCount++; else agentCount++;
+
                         return `
                             <tr>
-                                <td style="color: rgba(255,255,255,0.6)">${timeStr}</td>
+                                <td style="color: rgba(255,255,255,0.6)">${r.time || 'LIVE'}</td>
                                 <td>
                                     <span class="tag ${isHuman ? 'tag-human' : 'tag-agent'}">
                                         ${isHuman ? '👤 HUMAN' : '🤖 AGENT'}
                                     </span>
                                 </td>
-                                <td style="color: ${score > 30 ? '#ff4757' : '#00C9B7'}; font-weight: bold;">
-                                    ${score}%
-                                </td>
-                                <td style="color: rgba(255,255,255,0.4); font-size: 12px;">
-                                    ${r.reason || 'Standard Verification'}
-                                </td>
+                                <td style="color: ${isHuman ? '#00C9B7' : '#ff4757'}; font-weight: bold;">${risk}%</td>
+                                <td style="color: rgba(255,255,255,0.4); font-size: 12px;">${r.reason || 'Verified'}</td>
                             </tr>
                         `;
                     }).join('');
-                } else {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; opacity: 0.3; padding: 40px;">No entities detected in this session...</td></tr>';
+                    
+                    // Обновляем большие цифры на основе реально полученных данных
+                    document.getElementById('count-human').innerText = humanCount;
+                    document.getElementById('count-agent').innerText = agentCount;
                 }
-            } catch (e) {
-                console.error("Dashboard Sync Error:", e);
-            }
+            } catch (e) { console.error("Sync Error:", e); }
         }
-
-        setInterval(updateStats, 3000);
+        setInterval(updateStats, 2000);
         updateStats();
     </script>
 </body>
