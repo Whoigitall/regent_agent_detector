@@ -15,7 +15,7 @@
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { text-align: left; color: rgba(255,255,255,0.4); font-size: 11px; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); text-transform: uppercase; }
         td { padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; font-family: monospace; }
-        .tag { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+        .tag { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; display: inline-block; min-width: 70px; text-align: center; }
         .tag-human { background: rgba(0, 201, 183, 0.1); color: #00C9B7; border: 1px solid #00C9B7; }
         .tag-agent { background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid #ff4757; }
     </style>
@@ -58,37 +58,37 @@
     <script>
         async function updateStats() {
             try {
-                // Запрашиваем данные у нашего API
                 const res = await fetch('/api/stats');
                 if (!res.ok) throw new Error('API connection failed');
                 
                 const data = await res.json();
                 
-                // Обновляем счетчики в карточках
                 document.getElementById('count-human').innerText = data.human || 0;
                 document.getElementById('count-agent').innerText = data.agent || 0;
                 
                 const tbody = document.querySelector('#log-table tbody');
                 
-                // Если есть свежие записи в массиве recent
                 if (data.recent && data.recent.length > 0) {
                     tbody.innerHTML = data.recent.map(item => {
-                        // Парсим JSON строку из Redis обратно в объект, если это строка
                         const r = typeof item === 'string' ? JSON.parse(item) : item;
                         
-                        // Используем время напрямую (оно уже отформатировано на сервере)
-                        const timeStr = r.time || '--:--:--';
+                        // Сопоставляем поля из разных версий API (type или entity_type)
+                        const rawType = (r.entity_type || r.type || 'unknown').toLowerCase();
+                        const isHuman = rawType === 'human';
+                        
+                        const timeStr = r.time || (r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : '--:--:--');
+                        const score = r.risk !== undefined ? r.risk : (r.score || 0);
                         
                         return `
                             <tr>
                                 <td style="color: rgba(255,255,255,0.6)">${timeStr}</td>
                                 <td>
-                                    <span class="tag ${r.type === 'human' ? 'tag-human' : 'tag-agent'}">
-                                        ${r.type === 'human' ? '👤 ' + r.type : '🤖 ' + r.type}
+                                    <span class="tag ${isHuman ? 'tag-human' : 'tag-agent'}">
+                                        ${isHuman ? '👤 HUMAN' : '🤖 AGENT'}
                                     </span>
                                 </td>
-                                <td style="color: ${r.score > 50 ? '#ff4757' : '#00C9B7'}; font-weight: bold;">
-                                    ${r.score}%
+                                <td style="color: ${score > 30 ? '#ff4757' : '#00C9B7'}; font-weight: bold;">
+                                    ${score}%
                                 </td>
                                 <td style="color: rgba(255,255,255,0.4); font-size: 12px;">
                                     ${r.reason || 'Standard Verification'}
@@ -97,7 +97,6 @@
                         `;
                     }).join('');
                 } else {
-                    // Если данных пока нет
                     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; opacity: 0.3; padding: 40px;">No entities detected in this session...</td></tr>';
                 }
             } catch (e) {
@@ -105,10 +104,7 @@
             }
         }
 
-        // Авто-обновление каждые 3 секунды для эффекта Live-стрима
         setInterval(updateStats, 3000);
-        
-        // Первый запуск при загрузке страницы
         updateStats();
     </script>
 </body>
