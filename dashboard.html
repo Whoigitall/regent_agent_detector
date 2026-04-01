@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Regent | Agent Awareness Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -52,26 +51,27 @@
     <script>
         async function updateStats() {
             try {
-                const res = await fetch('/api/stats');
+                const res = await fetch('/api/stats?t=' + Date.now()); // Добавили t= для сброса кэша
                 const data = await res.json();
-                
-                let humanCount = 0;
-                let agentCount = 0;
-                
+                console.log("Regent Data Received:", data); // ЭТО ДЛЯ ПРОВЕРКИ В КОНСОЛИ
+
+                let hCount = 0;
+                let aCount = 0;
                 const tbody = document.querySelector('#log-table tbody');
                 
                 if (data.recent && data.recent.length > 0) {
                     tbody.innerHTML = data.recent.map(item => {
                         const r = typeof item === 'string' ? JSON.parse(item) : item;
                         
-                        // ПРОВЕРКА: Если риск 0 или в причине есть слово Human - это точно человек
+                        // Супер-гибкая проверка типа
                         const reason = (r.reason || '').toLowerCase();
                         const type = (r.entity_type || r.type || '').toLowerCase();
                         const risk = r.risk !== undefined ? r.risk : (r.score || 0);
                         
-                        const isHuman = (type === 'human' || risk === 0 || reason.includes('human'));
+                        // Если риск маленький ИЛИ причина содержит "human" - это человек
+                        const isHuman = (risk < 10 || reason.includes('human') || type === 'human');
                         
-                        if (isHuman) humanCount++; else agentCount++;
+                        if (isHuman) hCount++; else aCount++;
 
                         return `
                             <tr>
@@ -87,9 +87,10 @@
                         `;
                     }).join('');
                     
-                    // Обновляем большие цифры на основе реально полученных данных
-                    document.getElementById('count-human').innerText = humanCount;
-                    document.getElementById('count-agent').innerText = agentCount;
+                    document.getElementById('count-human').innerText = hCount;
+                    document.getElementById('count-agent').innerText = aCount;
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; opacity: 0.3; padding: 40px;">Waiting for new entities...</td></tr>';
                 }
             } catch (e) { console.error("Sync Error:", e); }
         }
